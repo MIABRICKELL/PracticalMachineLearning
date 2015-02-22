@@ -1,0 +1,143 @@
+---
+output: html_document
+---
+
+#Project Summary
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. We will ultimately predict the manner in which they did the exercise.
+
+
+This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+We start by downloading the training and test datasets and loading them
+
+#Exploratory Analysis
+```{r results='hide', warning=FALSE}
+##install and load required libraries
+if(!require("caret")){install.packages("caret");library(caret);}
+if(!require("rattle")){install.packages("rattle");library(rattle);}
+if(!require("ggplot2")){install.packages("ggplot2");library(ggplot2);}
+
+##set working directory
+setwd("C:\\Education\\Practical Machine Learning\\Project")
+
+#if the training file does not exist then download it
+ if(!file.exists("pml-training.csv")){
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "C:\\Education\\Practical Machine Learning\\Project\\pml-training.csv")
+  }
+
+#if the testing file does not exist then download it
+ if(!file.exists("pml-testing.csv")){
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "C:\\Education\\Practical Machine Learning\\Project\\pml-testing.csv")
+  }
+
+##load the training data into a data frame and set NAs
+trainingdata<-read.csv("pml-training.csv", na.strings=c("", "#DIV/0!"))
+
+##load the test data into a data frame and set NAs
+testdata<-read.csv("pml-testing.csv", na.strings=c("", "#DIV/0!"))
+
+#convert the variables in the training dataset to numeric
+for(n in c(8:ncol(trainingdata)-1))
+        {trainingdata[,n] = as.numeric(as.character(trainingdata[,n]))}
+
+#convert the variables in the testing dataset to numeric
+for(n in c(8:ncol(testdata)-1))
+        {testdata[,n] = as.numeric(as.character(testdata[,n]))}
+
+##Explore the data
+str(trainingdata)
+str(testdata)
+
+#remove columns with NA for variables in both training and test sets
+cols <- colnames(trainingdata[colSums(is.na(trainingdata)) == 0])[-(1:7)]
+trainingfinal<-trainingdata[cols]
+
+test <- testdata[ , colSums(is.na(testdata)) == 0]
+testfinal <- test[cols[cols!='classe']]
+
+##Split data into training and test data sets
+inTrain <- createDataPartition(y=trainingfinal$classe, p=0.7, list=FALSE)
+
+training<-trainingfinal[inTrain,]
+validation<-trainingfinal[-inTrain,]
+
+
+
+```
+
+##Build Prediction Models
+
+We will be building two models using different methods. We will do further analysis on the one that perdicts the best on the training data.
+
+We will first build the model by leveraging a tree method. RPart is a method of recursive partitioning for classification, regression, and survival trees. We will use the train function in the caret package using this method to train the model.
+
+```{r}
+set.seed(1000)
+modelTreeFit<-train(classe ~ ., data=training, method="rpart")
+
+##Get prediction using training data and get initial in sample error for comparison with the next method. We will do further analysis for the one that behaves the best.
+
+fancyRpartPlot(modelTreeFit$finalModel)
+
+##We now run the predict function to get our in sample error.
+predRpart<-predict(modelTreeFit, training)
+
+##Look at model error rates
+confusionMatrix(training$classe, predRpart)
+```
+The accuracy for this model is under 50%. Now we will try the random forest method to see if we get a better result.
+
+We will use cross validation and split the training set into a training and test set, since we can't shouldn't use the test set when building the model. We used the cross validation method option with random forest as seen below. According to Dr. Jeff Leak, random Forests are usually one of the top performing algorithms.
+
+```{r}
+
+set.seed(1000)
+tCtl <- trainControl(method = "cv", number = 3)
+modRFFit<-train(classe ~ ., data=training, method="rf", trControl=tCtl, importance=TRUE)
+
+#determine the important variables
+##varImpPlot(modRFFit, type=1)
+```
+
+We now run the predict function to get our in sample error.
+```{r}
+##We now run the predict function to get our in sample error.
+predRF<-predict(modRFFit, newdata=training)
+
+##Look at model error rates
+confusionMatrix(training$classe, predRF)
+
+##We will use this as our validation set
+##Do prediction on the validation data
+predRFvalid<-predict(modRFFit, newdata=validation)
+
+#get error rate on validation set to get the sample error
+confusionMatrix(validation$classe, predRFvalid)
+
+```
+Now we use the test dataset that was not used in training the model to get our out of sample error.
+
+```{r}
+##Do prediction on the test data
+predRFtest<-predict(modRFFit, newdata=testfinal)
+
+#get error rate on out of sample error
+##confusionMatrix(predRFtest, testfinal$classe)
+```
+##Conclusion
+
+We tried a couple of different methods to build two different models. We could have done further analysis of the variables to include and tried a couple of different methods, but it looks like the random forest model performs the best with an accuracy of over 99%.
+
+##Prediction Assignment Submission
+
+```{r results='hide'}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+predRFtest
+pml_write_files(predRFtest)
+```
